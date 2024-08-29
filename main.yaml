@@ -1,0 +1,38 @@
+name: CI/CD Pipeline for AI4Discovery
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  Deploy:
+    # Specify the runner label
+    runs-on: ai4discovery
+
+    steps:
+
+    - name: Fetch Latest Code
+      run: |
+        cd /home/easyrogs/ai4discovery.com/public_html
+        echo "Fetching latest code from origin main"
+        git fetch --all
+        echo "Fetch complete"
+
+    - name: Pull Latest Code
+      run: |
+        cd /home/easyrogs/ai4discovery.com/public_html
+        echo "Pulling latest code from origin main"
+        git reset --hard origin/main
+        git pull origin main
+        echo "Pull complete"
+
+#      Runs a set of commands using the runners shell
+  Notification-task:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Notify Google Chat
+      if: ${{ always() }} # Use always to ensure that the notification is also send on failure of former steps
+      uses: SimonScholz/google-chat-action@main
+      with:
+          webhookUrl: '${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}' # For this in GChat Webhook Section Create **GOOGLE_CHAT_WEBHOOK_URL** It will give you value use that value in secret & key will remain same
+          jobStatus: '${{ job.status }}'

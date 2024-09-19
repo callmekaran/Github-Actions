@@ -1,0 +1,65 @@
+name: CI/CD Pipeline for TaxCapture-Staging
+
+on:
+  push:
+    branches:
+      - development
+
+jobs:
+  Deploy:
+    runs-on: taxcapture-staging  # Specify the runner label
+
+    steps:
+      - name: Stop Application
+        run: |
+          echo "Stopping all PM2 processes..."
+          pm2 stop all 
+        continue-on-error: true
+
+      - name: Fetch Secrets
+        run: |
+          cd /var/www/html/taxcapture_backend
+          echo "Retrieving secrets from AWS Secrets Manager..."
+          echo "Secret Name: ${{ secrets.SECRET_ID }}"
+          SECRETS_JSON=$(aws secretsmanager get-secret-value --secret-id "${{ secrets.SECRET_ID }}" --query SecretString --output text)
+          echo "Writing secrets to .env file..."
+          echo $SECRETS_JSON | jq -r 'to_entries | map("\(.key)=\(.value | tostring)") | .[]' > .env
+          echo "Displaying .env contents for debugging:"
+
+      - name: Fetch Latest Code
+        run: |
+          cd /var/www/html/taxcapture_backend
+          echo "Removing old node_modules and dist directories..."
+          rm -rf node_modules dist
+          echo "Fetching latest code from origin development branch..."
+          git fetch --all
+          echo "Fetch complete."
+
+      - name: Pull Latest Code
+        run: |
+          cd /var/www/html/taxcapture_backend
+          echo "Resetting and pulling latest code from origin development..."
+          git reset --hard origin/development
+          git pull origin development
+          echo "Code pull complete."
+
+      - name: Install and Build
+        run: |
+          cd /var/www/html/taxcapture_backend
+          echo "Installing dependencies and building the project..."
+          npm install
+          npm run compile
+          echo "Cleaning up environment..."
+          pm2 restart all || pm2 start npm --log-date-format 'DD-MM HH:mm:ss.SSS' --name "taxcapture-backend" -- start --no-daemon --no-autorestart
+          echo "PM2 processes restarted."
+
+  Notification-task:
+    runs-on: ubuntu-latest
+    needs: Deploy
+    steps:
+    - name: Notify Google Chat
+      if: ${{ always() }}  # Ensures notification is sent regardless of success or failure
+      uses: SimonScholz/google-chat-action@main
+      with:
+        webhookUrl: '${{ secrets.GOOGLE_CHAT_WEBHOOK_URL }}'
+        jobStatus: '${{ job.status }}'
